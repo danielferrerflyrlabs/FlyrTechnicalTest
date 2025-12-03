@@ -1,51 +1,69 @@
-# FlyrTech - Redis Race Condition Challenge
+# FlyrTech - Technical Challenge
 
-A .NET 8 solution demonstrating and solving concurrency problems with Redis distributed cache.
+A .NET 8 solution with an intentional race condition for you to analyze and fix.
 
-## 🎯 Race Condition Challenge
+## 📋 Challenge Overview
 
-This solution includes an **intentional race condition** to demonstrate data loss in concurrent update scenarios.
+This is a **3-5 hour technical assessment** with two main components:
 
-### The Problem
+### Part 1: Technical Analysis (3-4 hours)
+Complete the `TECHNICAL_ANALYSIS.md` document with your in-depth analysis of the race condition problem and proposed solutions.
 
-The `JourneyService.UpdateSegmentStatusAsync()` method has a critical race condition:
+### Part 2: Implementation (45-60 minutes)
+Implement one of your proposed solutions to fix the race condition in `JourneyService.UpdateSegmentStatusAsync()`.
 
-**Current Implementation (Problematic):**
-1. **Read** entire journey from Redis
-2. **Modify** a specific segment in memory
-3. **Write** entire journey back to Redis
+## 🚀 Getting Started
 
-**What Goes Wrong with 20 Concurrent Updates:**
-- Thread 1 reads journey → modifies SEG-001 → writes back
-- Thread 2 reads journey → modifies SEG-002 → writes back **← OVERWRITES Thread 1!**
-- Thread 3 reads journey → modifies SEG-003 → writes back **← OVERWRITES Threads 1 & 2!**
-- **Result:** Only the last update survives. 17-19 updates are lost! 💥
+**1. Fork this repository to your own GitHub account:**
+- Click the "Fork" button at the top right of this repository
+- Clone your forked repository to your local machine:
+```powershell
+git clone https://github.com/YOUR_USERNAME/FlyrTechnicalTest.git
+cd FlyrTechnicalTest
+```
 
-### Quick Start
+**2. Read the full challenge details:**
+See [RACE_CONDITION_CHALLENGE.md](RACE_CONDITION_CHALLENGE.md) for the complete problem description.
 
-**1. Start Redis:**
+**2. Start Redis:**
 ```powershell
 docker run -d -p 6379:6379 --name redis-flyrtech redis:latest
 ```
 
-**2. Run the failing test:**
+**3. Verify the problem exists:**
 ```powershell
 dotnet test --filter "FullyQualifiedName~UpdateSegmentStatus_With20ConcurrentUpdates"
 ```
-**Expected:** ❌ TEST FAILS - Most updates are lost
+**Expected:** ❌ TEST FAILS - Updates are lost due to race condition
 
-**3. Run the sequential test:**
+**4. Complete your technical analysis:**
+Fill out `TECHNICAL_ANALYSIS.md` with your analysis and proposed solutions.
+
+**5. Implement your solution:**
+Fix the code to make all tests pass.
+
+**6. Verify your solution works:**
 ```powershell
-dotnet test --filter "FullyQualifiedName~UpdateSegmentStatus_SequentialUpdates"
+dotnet test
 ```
-**Expected:** ✅ TEST PASSES - Proves the logic is correct
+**Expected:** ✅ ALL 23 tests pass
 
-### Your Challenge
+**7. Commit and push your changes:**
+```powershell
+git add .
+git commit -m "Fix race condition in JourneyService"
+git push origin main
+```
 
-Fix `JourneyService.UpdateSegmentStatusAsync()` in `FlyrTech.Infrastructure/JourneyService.cs` to handle concurrent updates without data loss.
+## 📊 Deliverables
 
-**Success Criteria:**
-All 20 concurrent updates must succeed without data loss.
+**Submit your work by sending us the link to your forked repository.**
+
+Your repository should include:
+1. **TECHNICAL_ANALYSIS.md** - Completed with your detailed analysis
+2. **Code changes** - Your implementation to fix the race condition
+3. **All tests passing** - Including the concurrent updates test
+4. **Clean commit history** - Well-organized commits with clear messages
 
 ---
 
@@ -222,13 +240,18 @@ RedisConnectionException: It was not possible to connect...
 3. Restart Redis service
 4. Check logs
 
+## 📚 Additional Documentation
+
+- **[RACE_CONDITION_CHALLENGE.md](RACE_CONDITION_CHALLENGE.md)** - Detailed problem description and success criteria
+- **[TECHNICAL_ANALYSIS.md](TECHNICAL_ANALYSIS.md)** - Template for your technical analysis (to be completed)
+
 ## Key Features
 
 ✅ Real Redis integration (not mocked)  
 ✅ Race condition demonstration for learning  
 ✅ Clean architecture & DI  
 ✅ Journey data auto-initialization  
-✅ 23 tests (22 pass, 1 intentional fail)  
+✅ 23 tests (22 pass, 1 intentional fail before fix)  
 ✅ Swagger documentation  
 ✅ Async/await patterns  
 
