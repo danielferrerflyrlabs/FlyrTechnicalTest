@@ -1,0 +1,491 @@
+# FlyrTech - Distributed Redis Cache Solution
+
+A complete .NET 8 solution implementing a distributed cache service using Redis with clean architecture principles.
+
+## 🎯 Race Condition Challenge
+
+This solution includes an **intentional race condition** in the journey update functionality to demonstrate and solve concurrency problems with Redis.
+
+### The Problem
+
+The `JourneyService.UpdateSegmentStatusAsync()` method has a critical race condition that causes data loss when multiple concurrent updates are executed.
+
+**Current Implementation (Problematic):**
+1. **Read** the entire journey from Redis cache
+2. **Modify** a specific segment in memory
+3. **Write** the entire journey back to Redis
+
+**What Goes Wrong:**
+When 20 updates execute concurrently on the same journey but different segments:
+- Thread 1 reads journey (all segments: "Scheduled")
+- Thread 2 reads journey (all segments: "Scheduled")  
+- Thread 3 reads journey (all segments: "Scheduled")
+- ...
+- Thread 1 modifies SEG-001 → "Departed" and writes entire journey back
+- Thread 2 modifies SEG-002 → "Boarding" and writes entire journey back **← OVERWRITES Thread 1's changes!**
+- Thread 3 modifies SEG-003 → "Delayed" and writes entire journey back **← OVERWRITES Thread 1 & 2's changes!**
+
+**Result:** Only the last update survives. 17-19 updates are lost! 💥
+
+### Quick Start
+
+**1. Start Redis:**
+```powershell
+docker run -d -p 6379:6379 --name redis-flyrtech redis:latest
+```
+
+**2. Run the failing test (demonstrates the problem):**
+```powershell
+dotnet test --filter "FullyQualifiedName~UpdateSegmentStatus_With20ConcurrentUpdates"
+```
+
+**Expected:** ❌ TEST FAILS - Most segment updates are lost
+
+**3. Run the sequential test (proves the logic is correct):**
+```powershell
+dotnet test --filter "FullyQualifiedName~UpdateSegmentStatus_SequentialUpdates"
+```
+
+**Expected:** ✅ TEST PASSES - All updates work when executed sequentially
+
+### Your Challenge
+
+Fix the `UpdateSegmentStatusAsync` method in `FlyrTech.Infrastructure/JourneyService.cs` to handle concurrent updates correctly without data loss.
+
+### Possible Solutions
+
+1. **Fine-grained locking** - Use Redis distributed locks (`RedLock`, `SET NX`) to ensure only one thread updates at a time
+2. **Atomic operations** - Store each segment independently with its own Redis key (e.g., `journey:JRN-001:segment:SEG-001`)
+3. **Optimistic locking** - Add versioning/timestamps to detect conflicts and retry on collision
+4. **Redis transactions** - Use `WATCH`/`MULTI`/`EXEC` to ensure atomic read-modify-write
+5. **Lua scripts** - Execute the entire read-modify-write as an atomic operation on the Redis server
+
+### Success Criteria
+
+After implementing your fix, this test should pass:
+
+```powershell
+dotnet test --filter "FullyQualifiedName~UpdateSegmentStatus_With20ConcurrentUpdates"
+```
+
+**All 20 concurrent segment updates must be successfully applied without any data loss.** ✅
+
+### Files to Modify
+
+- **Primary:** `FlyrTech.Infrastructure/JourneyService.cs` - The main implementation
+- **Optional:** `FlyrTech.Core/ICacheService.cs` - If you need additional cache operations
+- **Optional:** `FlyrTech.Infrastructure/RedisCacheService.cs` - If you need Redis-specific features
+
+### Hints
+
+<details>
+<summary>💡 Click for hints (try solving it yourself first!)</summary>
+
+**Hint 1:** The problem is that you're reading and writing the ENTIRE journey object. Can you make the operations more granular?
+
+**Hint 2:** Redis supports atomic operations. Look into `HSET`, `HGET` for hash operations, or use separate keys per segment.
+
+**Hint 3:** If you keep the current structure, you need to prevent concurrent writes. Redis provides `SET NX` (set if not exists) for simple locking.
+
+**Hint 4:** The `StackExchange.Redis` library provides `IDatabase.HashSet()` for atomic hash operations.
+
+**Hint 5:** Consider storing the journey like this:
+```
+journey:JRN-001:metadata → {id, passengerName, status, ...}
+journey:JRN-001:segment:SEG-001 → {segmentId, origin, destination, status, ...}
+journey:JRN-001:segment:SEG-002 → {segmentId, origin, destination, status, ...}
+```
+This way, updating one segment doesn't require reading/writing the entire journey!
+
+</details>
+
+---
+
+## Solution Structure
+
+```
+FlyrTech/
+├── FlyrTech.Core/                  # Core domain layer
+│   ├── ICacheService.cs            # Cache service interface
+│   ├── IJourneyService.cs          # Journey service interface
+│   └── Models/
+│       └── Journey.cs              # Journey domain model
+├── FlyrTech.Infrastructure/        # Infrastructure layer
+│   ├── RedisCacheService.cs        # Redis cache implementation
+│   └── JourneyService.cs           # Journey service with race condition
+├── FlyrTech.Api/                   # ASP.NET Core Web API
+│   ├── Program.cs                  # Dependency injection & initialization
+│   ├── appsettings.json            # Redis connection configuration
+│   └── Data/
+│       └── journeys.json           # Initial journey data
+└── FlyrTech.Tests/                 # Unit tests with xUnit
+    ├── RedisCacheServiceTests.cs
+    ├── CacheEndpointTests.cs
+    └── JourneyRaceConditionTests.cs # Race condition demonstration
+```
+
+## Technologies
+
+- **.NET 8**
+- **StackExchange.Redis** - Redis client library
+- **ASP.NET Core Web API** - RESTful API endpoints
+- **xUnit** - Unit testing framework
+- **Moq** - Mocking framework for tests
+
+## Prerequisites
+
+- **.NET 8 SDK** - [Download](https://dotnet.microsoft.com/download/dotnet/8.0)
+- **Redis server** - See installation instructions below
+
+## Redis Installation
+
+This solution **requires Redis** to be running. Choose your platform:
+
+### Windows
+
+**Option 1: Using Docker (Recommended)**
+```powershell
+# Install Docker Desktop first: https://www.docker.com/products/docker-desktop
+# Then run Redis container:
+docker run -d -p 6379:6379 --name redis-flyrtech redis:latest
+
+## Building the Solution
+
+```powershell
+dotnet build FlyrTech.sln
+```
+
+## Running Tests
+
+⚠️ **Important:** Make sure Redis is running before executing tests!
+
+**Run all tests:**
+```powershell
+dotnet test FlyrTech.Tests/FlyrTech.Tests.csproj
+```
+
+**Run only cache tests:**
+```powershell
+dotnet test --filter "FullyQualifiedName~CacheService"
+```
+
+**Run only race condition tests:**
+```powershell
+dotnet test --filter "FullyQualifiedName~JourneyRaceCondition"
+```
+
+**Expected results:**
+- ✅ 22 tests should pass (cache and endpoint tests)
+- ❌ 1 test should fail: `UpdateSegmentStatus_With20ConcurrentUpdates_ShouldHaveRaceConditionIssues`
+  - This failure is **intentional** and demonstrates the race condition problem
+
+## Running the API
+
+⚠️ **Important:** Make sure Redis is running before starting the API!
+
+```powershell
+cd FlyrTech.Api
+dotnet run
+```
+
+The API will be available at:
+- HTTP: `http://localhost:5000`
+- HTTPS: `https://localhost:5001`
+- Swagger UI: `https://localhost:5001/swagger`
+
+On startup, the API will:
+1. Connect to Redis
+2. Load journey data from `Data/journeys.json`
+3. Initialize the cache with 3 sample journeys
+# Install Redis
+brew install redis
+
+# Start Redis service
+brew services start redis
+
+# Verify:
+redis-cli ping
+# Should respond: PONG
+```
+
+### Linux (Ubuntu/Debian)
+
+```bash
+# Install Redis
+sudo apt update
+sudo apt install redis-server
+
+# Start Redis service
+sudo systemctl start redis-server
+sudo systemctl enable redis-server
+
+# Verify:
+redis-cli ping
+# Should respond: PONG
+```
+
+### Docker (All Platforms)
+
+```bash
+# Run Redis container
+docker run -d -p 6379:6379 --name redis-flyrtech redis:latest
+
+# View logs
+docker logs redis-flyrtech
+
+# Stop Redis
+docker stop redis-flyrtech
+
+# Start Redis again
+docker start redis-flyrtech
+```
+
+## Configuration
+
+Configure Redis connection in `FlyrTech.Api/appsettings.json`:
+
+```json
+{
+  "Redis": {
+    "ConnectionString": "localhost:6379"
+  }
+}
+```
+
+For remote Redis instances, update the connection string:
+```json
+{
+  "Redis": {
+    "ConnectionString": "your-redis-host:6379,password=your-password"
+  }
+}
+```
+## API Endpoints
+
+### Journey Endpoints
+
+#### GET /api/journeys
+Get all journey IDs from cache.
+
+**Response:**
+```json
+{
+  "journeyIds": ["JRN-001", "JRN-002", "JRN-003"],
+  "count": 3
+}
+```
+
+#### GET /api/journeys/{journeyId}
+Get a specific journey with all its segments.
+
+**Response:**
+```json
+{
+  "id": "JRN-001",
+  "passengerName": "John Smith",
+  "passengerEmail": "john.smith@email.com",
+  "status": "Confirmed",
+  "totalPrice": 850.50,
+  "segments": [
+    {
+      "segmentId": "SEG-001-1",
+      "origin": "MAD",
+      "destination": "BCN",
+      "flightNumber": "IB3012",
+      "status": "Scheduled",
+      "price": 425.25
+    }
+  ]
+}
+```
+
+#### PUT /api/journeys/{journeyId}/segments/{segmentId}/status
+Update a segment status. ⚠️ **Has race condition issues with concurrent updates.**
+
+**Request Body:**
+```json
+{
+  "status": "Departed"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Segment status updated successfully",
+  "journeyId": "JRN-001",
+  "segmentId": "SEG-001-1",
+  "newStatus": "Departed"
+}
+```
+
+#### PUT /api/journeys/{journeyId}/status
+Update the overall journey status.
+
+**Request Body:**
+```json
+{
+  "status": "InProgress"
+}
+```
+
+### Cache Endpoints
+
+#### GET /api/cache/demo
+### Clean Architecture
+
+- **FlyrTech.Core**: Contains domain interfaces (ICacheService, IJourneyService) and models
+- **FlyrTech.Infrastructure**: Contains concrete implementations (RedisCacheService, JourneyService)
+- **FlyrTech.Api**: Entry point with minimal API endpoints and data initialization
+- **FlyrTech.Tests**: Unit and integration tests with Redis
+
+## Testing Strategy
+
+The test suite includes:
+
+- **Unit tests** for RedisCacheService with mocked IDatabase (21 tests)
+- **Integration tests** for JourneyService using real Redis connection (2 tests)
+- **Parameter validation tests**
+- **Race condition demonstration tests**
+
+All tests require a **running Redis instance** on `localhost:6379`.
+
+### Test Categories
+
+1. **RedisCacheServiceTests** - Tests basic cache operations
+2. **CacheEndpointTests** - Tests API endpoint behavior
+3. **JourneyRaceConditionTests** - Demonstrates concurrency issues
+
+## Race Condition Challenge
+
+This solution includes an **intentional race condition** in `JourneyService.UpdateSegmentStatusAsync()` to demonstrate concurrency problems.
+
+### The Problem
+
+When 20 concurrent updates execute on different segments:
+- Multiple threads read the same journey state
+- Each modifies its segment
+- Each writes back the entire journey
+- **Result:** Most updates are lost (overwritten by other threads)
+
+### Running the Challenge
+
+See detailed instructions in [RACE_CONDITION_CHALLENGE.md](RACE_CONDITION_CHALLENGE.md)
+
+**Quick test:**
+```powershell
+# This test will FAIL - demonstrating the race condition
+## Key Features
+
+✅ Clean architecture with separation of concerns  
+✅ Dependency injection with proper lifetime management  
+✅ Real Redis integration (not mocked)  
+✅ Journey data initialization on startup  
+✅ Comprehensive test suite (23 tests)  
+✅ Race condition demonstration for learning  
+✅ RESTful API with Swagger documentation  
+✅ Async/await throughout for optimal performance  
+✅ Proper error handling and validation  
+✅ XML documentation comments  
+
+## Troubleshooting
+
+### Redis Connection Issues
+
+**Error:** `RedisConnectionException: It was not possible to connect to the redis server(s)`
+
+**Solutions:**
+1. Verify Redis is running:
+   ```bash
+   redis-cli ping
+   # Should respond: PONG
+   ```
+
+2. Check if Redis port is open:
+   ```bash
+   # Windows
+   netstat -an | findstr "6379"
+   
+   # Mac/Linux
+   netstat -an | grep 6379
+   ```
+
+3. If using Docker, check container status:
+   ```bash
+   docker ps
+   docker logs redis-flyrtech
+   ```
+
+4. Update connection string in `appsettings.json` if Redis is on a different host/port
+
+### Tests Failing
+
+If tests fail unexpectedly:
+1. Ensure Redis is running
+2. Clear Redis data: `redis-cli FLUSHALL`
+3. Restart Redis service
+4. Check Redis logs for errors
+
+## License
+
+MITua scripts
+```json
+{
+  "message": "Value cached successfully",
+  "key": "mykey",
+  "expirationSeconds": 120
+}
+```
+
+### DELETE /api/cache/{key}
+Removes a value from cache.
+
+**Response:**
+```json
+{
+  "message": "Value deleted successfully",
+  "key": "mykey"
+}
+```
+
+## Architecture
+
+### Dependency Injection
+
+The solution follows SOLID principles with proper dependency injection:
+
+- **IConnectionMultiplexer** - Registered as Singleton for Redis connection pooling
+- **ICacheService** - Registered as Singleton with RedisCacheService implementation
+
+### Clean Architecture
+
+- **FlyrTech.Core**: Contains domain interfaces (ICacheService)
+- **FlyrTech.Infrastructure**: Contains concrete implementations (RedisCacheService)
+- **FlyrTech.Api**: Entry point with minimal API endpoints
+- **FlyrTech.Tests**: Unit tests with mocked dependencies
+
+## Testing
+
+The test suite includes:
+
+- Unit tests for RedisCacheService with mocked IDatabase
+- Parameter validation tests
+- Cache workflow tests
+- Mock-based endpoint behavior tests
+
+All tests use **Moq** to mock Redis dependencies, ensuring tests run without requiring an actual Redis instance.
+
+## Key Features
+
+✅ Clean architecture with separation of concerns  
+✅ Dependency injection with proper lifetime management  
+✅ Comprehensive unit tests (21 tests, all passing)  
+✅ Configuration-based Redis connection  
+✅ RESTful API with Swagger documentation  
+✅ Async/await throughout for optimal performance  
+✅ Proper error handling and validation  
+✅ XML documentation comments  
+
+## License
+
+MIT
