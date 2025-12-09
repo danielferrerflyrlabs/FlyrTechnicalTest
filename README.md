@@ -4,7 +4,9 @@ A .NET 8 solution with an intentional race condition for you to analyze and fix.
 
 ## 📋 Challenge Overview
 
-This is a **3-5 hour technical assessment** with two main components:
+This is a **3-5 hour technical assessment** with two main components.
+
+**💡 IMPORTANT:** We care more about **how you think** about the problem and your solution design than the implementation itself. We want to see your analytical process, how you evaluate trade-offs, and how you communicate your design decisions.
 
 ### Part 1: Technical Analysis (3-4 hours)
 Complete the `TECHNICAL_ANALYSIS.md` document with your in-depth analysis of the race condition problem and proposed solutions.
